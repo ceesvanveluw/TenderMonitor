@@ -11,10 +11,6 @@ headers = {
     )
 }
 
-print("=" * 60)
-print("CANADABUYS TEST")
-print("=" * 60)
-
 r = requests.get(
     URL,
     headers=headers,
@@ -22,14 +18,17 @@ r = requests.get(
 )
 
 print("Status:", r.status_code)
-print("Length:", len(r.text))
 
-soup = BeautifulSoup(r.text, "html.parser")
+html = r.text
 
-print()
-print("Page title:")
-print(soup.title.text if soup.title else "No title")
+keywords = [
+    "Closing date",
+    "Organization",
+    "/en/tender-opportunities/tender-notice",
+    "Tender notices",
+    "Results per page",
+    "Showing"
+]
 
-print()
-print("First 1000 chars:")
-print(r.text[:1000])
+for keyword in keywords:
+    print(keyword, "=", html.count(keyword))
