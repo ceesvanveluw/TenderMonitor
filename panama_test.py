@@ -38,23 +38,36 @@ r2 = session.post(
     timeout=30
 )
 
-print("POST Status:", r2.status_code)
+soup = BeautifulSoup(r2.text, "html.parser")
 
-html = r2.text
+print("\nPANAMA TENDERS\n")
+print("=" * 100)
 
-soup = BeautifulSoup(html, "html.parser")
+for well in soup.find_all("div", class_="well"):
 
-print("\nTENDERS FOUND")
-print("=" * 80)
+    number = ""
 
-for link in soup.find_all("a"):
+    link = well.find("a")
 
-    href = str(link.get("href"))
+    if link:
+        number = link.get_text(strip=True)
 
-    if "RedirectLicitaciones" in href:
+    title_tag = well.find("p", class_="title")
 
-        title = link.get_text(" ", strip=True)
+    title = ""
 
-        print(title)
-        print(href)
-        print("-" * 80)
+    if title_tag:
+        title = title_tag.get_text(" ", strip=True)
+
+    dates = well.find_all("p", class_="date")
+
+    closing_date = ""
+
+    if dates:
+        closing_date = dates[0].get_text(" ", strip=True)
+
+    if number:
+        print(f"RFQ: {number}")
+        print(f"TITLE: {title}")
+        print(f"CLOSES: {closing_date}")
+        print("-" * 100)
