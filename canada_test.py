@@ -185,6 +185,7 @@ def get_description_after_label(lines):
         "summary",
         "details"
     ]
+    
 
     stop_labels = [
         "closing date",
