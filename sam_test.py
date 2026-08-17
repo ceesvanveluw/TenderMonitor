@@ -1,9 +1,10 @@
 import os
 import requests
+import json
 
 api_key = os.environ["SAM_API_KEY"]
 
-url = "https://api.sam.gov/opportunities/v2/search"
+search_url = "https://api.sam.gov/opportunities/v2/search"
 
 params = {
     "api_key": api_key,
@@ -12,23 +13,28 @@ params = {
     "postedTo": "08/17/2026"
 }
 
-response = requests.get(url, params=params)
+response = requests.get(search_url, params=params)
+
+print("SEARCH STATUS:", response.status_code)
+
 data = response.json()
 
 first = data["opportunitiesData"][0]
 
 desc_url = first["description"]
 
+print()
 print("DESCRIPTION URL")
 print(desc_url)
 
 print()
-print("DOWNLOADING DESCRIPTION...")
+print("FETCHING DESCRIPTION")
 print()
 
 desc_response = requests.get(desc_url)
 
-print("STATUS:", desc_response.status_code)
+print("DESCRIPTION STATUS:", desc_response.status_code)
 
 print()
-print(desc_response.text[:5000])
+print("RAW RESPONSE:")
+print(desc_response.text[:3000])
