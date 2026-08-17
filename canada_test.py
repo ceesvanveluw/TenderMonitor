@@ -13,7 +13,6 @@ headers = {
 }
 
 SEARCH_WORDS = [
-    # English
     "marine",
     "vessel",
     "ship",
@@ -34,17 +33,12 @@ SEARCH_WORDS = [
     "tug",
     "drydock",
     "refit",
-
-    # French / bilingual CanadaBuys terms
     "maritime",
     "navire",
-    "bateau",
     "grue",
     "levage",
     "treuil",
     "hydraulique",
-    "portuaire",
-    "port",
     "dragage",
     "cale sèche",
     "réparation navale",
@@ -52,46 +46,38 @@ SEARCH_WORDS = [
 ]
 
 positive = {
-    # English
+    # Strong Huisman indicators
     "crane": 35,
+    "grue": 35,
     "hoist": 30,
     "winch": 30,
+    "treuil": 30,
     "hydraulic": 25,
-    "marine": 25,
-    "vessel": 25,
-    "ship": 25,
-    "shipyard": 35,
-    "boat": 20,
-    "tug": 25,
+    "hydraulique": 25,
     "drydock": 35,
     "drydocking": 35,
     "refit": 25,
-    "offshore": 35,
-    "port": 20,
-    "harbour": 20,
-    "harbor": 20,
-    "dock": 20,
     "dredg": 35,
-    "cargo": 20,
-    "lifting": 25,
-    "lift": 15,
-    "naval": 25,
-    "underwater": 20,
-    "auv": 20,
-
-    # French
-    "maritime": 25,
-    "navire": 25,
-    "bateau": 20,
-    "grue": 35,
-    "levage": 25,
-    "treuil": 30,
-    "hydraulique": 25,
-    "portuaire": 20,
     "dragage": 35,
-    "cale sèche": 35,
-    "réparation navale": 30,
-    "remorqueur": 25
+    "offshore": 35,
+    "lifting": 25,
+    "levage": 25,
+    "cargo": 20,
+
+    # Weakened broad marine words
+    "marine": 15,
+    "maritime": 15,
+    "ship": 10,
+    "vessel": 10,
+    "navire": 10,
+    "boat": 5,
+    "tug": 10,
+    "port": 5,
+    "harbour": 5,
+    "harbor": 5,
+    "dock": 5,
+    "portuaire": 5,
+    "remorqueur": 10
 }
 
 negative = {
@@ -110,6 +96,14 @@ negative = {
     "cleaning": -40,
     "food": -40,
     "office": -30,
+
+    # Vehicle penalties
+    "truck": -15,
+    "pickup": -20,
+    "camion": -15,
+    "camionnette": -15,
+    "vehicule": -10,
+    "véhicule": -10,
 
     # French noise
     "santé": -40,
@@ -138,7 +132,7 @@ for word in SEARCH_WORDS:
         timeout=30
     )
 
-    print(f"Search word: {word} | Status: {r.status_code} | Length: {len(r.text)}")
+    print(f"Search word: {word} | Status: {r.status_code}")
 
     if r.status_code != 200:
         continue
@@ -190,10 +184,10 @@ for url, item in seen.items():
         if word in text:
             score += points
 
-    # Small bonus if the tender appeared in multiple keyword searches
     score += len(item["matched_words"]) * 5
 
-    if score > 0:
+    if score >= 40:
+
         results.append({
             "score": score,
             "title": title,
@@ -214,9 +208,9 @@ print("=" * 100)
 print(f"Search words used       : {len(SEARCH_WORDS)}")
 print(f"Raw tender links seen   : {total_links_seen}")
 print(f"Unique tenders found    : {len(seen)}")
-print(f"Positive candidates     : {len(results)}")
-print()
+print(f"Candidates >= 40 score  : {len(results)}")
 
+print()
 print("=" * 100)
 print("TOP CANADABUYS CANDIDATES")
 print("=" * 100)
@@ -231,4 +225,4 @@ for item in results[:30]:
     print("-" * 100)
 
 if not results:
-    print("No positive CanadaBuys candidates found.")
+    print("No candidates found.")
