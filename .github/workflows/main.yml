@@ -20,3 +20,5 @@ jobs:
       - run: pip install requests
 
       - run: python sam_test.py
+
+      - run: python panama_test.py
