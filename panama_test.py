@@ -3,29 +3,42 @@ import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-url = "https://apps.pancanal.com/sli/LicitacionesBusqueda/BusquedaLicitacionesResultados"
+session = requests.Session()
 
-r = requests.get(
+# Step 1 - get search page
+url = "https://apps.pancanal.com/sli/LicitacionesBusqueda/Welcome"
+
+r = session.get(
     url,
     timeout=30,
     verify=False
 )
 
-print("Status:", r.status_code)
+print("GET Status:", r.status_code)
 
-html = r.text
+# Step 2 - simulate Ship & Marine Equipment search
+search_url = "https://apps.pancanal.com/sli/LicitacionesBusqueda/LicitacionesBusquedaParametros"
 
-print("\nHTML LENGTH:", len(html))
-print("\nNumeroLicitacion count:", html.count("NumeroLicitacion"))
-print("RedirectLicitaciones count:", html.count("RedirectLicitaciones"))
+payload = {
+    "CategoriaSeleccionadaID": "Ship & Marine Equipment",
+    "EstatusSeleccionadoID": "TODOS"
+}
 
-idx = html.find("NumeroLicitacion")
+r2 = session.post(
+    search_url,
+    data=payload,
+    timeout=30,
+    verify=False
+)
 
-print("\nFIRST OCCURRENCE POSITION:", idx)
+print("POST Status:", r2.status_code)
 
-if idx >= 0:
-    print("\n================ CONTEXT ================\n")
-    start = max(0, idx - 1000)
-    end = min(len(html), idx + 3000)
-    print(html[start:end])
-    print("\n============= END CONTEXT =============\n")
+html = r2.text
+
+print("Length:", len(html))
+print("RedirectLicitaciones =", html.count("RedirectLicitaciones"))
+print("Ver detalle =", html.count("Ver detalle"))
+print("NumeroLicitacion =", html.count("NumeroLicitacion"))
+
+print("\nFIRST 3000 CHARACTERS\n")
+print(html[:3000])
