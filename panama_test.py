@@ -1,23 +1,16 @@
-import json
 import requests
 import urllib3
 from bs4 import BeautifulSoup
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-BASE_URL = "https://apps.pancanal.com"
-
-CATEGORIES = [
-    "Ship & Marine Equipment",
-    "Materials Handling",
-    "Hydraulic"
-]
-
 session = requests.Session()
 
-# Get token once
+# Get search page and token
+url = "https://apps.pancanal.com/sli/LicitacionesBusqueda/Welcome"
+
 r = session.get(
-    f"{BASE_URL}/sli/LicitacionesBusqueda/Welcome",
+    url,
     verify=False,
     timeout=30
 )
@@ -29,55 +22,52 @@ token = soup.find(
     {"name": "__RequestVerificationToken"}
 ).get("value")
 
-all_tenders = []
+# Submit Ship & Marine Equipment search
+payload = {
+    "__RequestVerificationToken": token,
+    "CategoriaSeleccionadaID": "Ship & Marine Equipment",
+    "EstatusSeleccionadoID": "TODOS"
+}
 
-for category in CATEGORIES:
+post_url = "https://apps.pancanal.com/sli/LicitacionesBusqueda/LicitacionesBusquedaParametros"
 
-    payload = {
-        "__RequestVerificationToken": token,
-        "CategoriaSeleccionadaID": category,
-        "EstatusSeleccionadoID": "TODOS"
-    }
+r2 = session.post(
+    post_url,
+    data=payload,
+    verify=False,
+    timeout=30
+)
 
-    r2 = session.post(
-        f"{BASE_URL}/sli/LicitacionesBusqueda/LicitacionesBusquedaParametros",
-        data=payload,
-        verify=False,
-        timeout=30
-    )
+soup = BeautifulSoup(r2.text, "html.parser")
 
-    soup = BeautifulSoup(r2.text, "html.parser")
+print("\nPANAMA TENDERS\n")
+print("=" * 100)
 
-    print("\n")
-    print("=" * 100)
-    print(f"CATEGORY: {category}")
-    print("=" * 100)
+for well in soup.find_all("div", class_="well"):
 
-    for well in soup.find_all("div", class_="well"):
+    number = ""
 
-        number = ""
-        title = ""
-        closing_date = ""
-        detail_url = ""
+    link = well.find("a")
 
-        link = well.find("a")
+    if link:
+        number = link.get_text(strip=True)
 
-        if link:
-            number = link.get_text(strip=True)
+    title_tag = well.find("p", class_="title")
 
-            href = link.get("href")
+    title = ""
 
-            if href:
-                if href.startswith("/"):
-                    detail_url = BASE_URL + href
-                else:
-                    detail_url = href
+    if title_tag:
+        title = title_tag.get_text(" ", strip=True)
 
-        title_tag = well.find("p", class_="title")
+    dates = well.find_all("p", class_="date")
 
-        if title_tag:
-            title = title_tag.get_text(" ", strip=True)
+    closing_date = ""
 
-        date_tag = well.find("p", class_="date")
+    if dates:
+        closing_date = dates[0].get_text(" ", strip=True)
 
-  
+    if number:
+        print(f"RFQ: {number}")
+        print(f"TITLE: {title}")
+        print(f"CLOSES: {closing_date}")
+        print("-" * 100)
