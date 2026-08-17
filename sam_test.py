@@ -1,3 +1,12 @@
+# NEXT STEPS
+#
+# 1. Verify limit=1000 works
+# 2. Verify date filtering works
+# 3. Verify top 20 quality
+# 4. Add description retrieval for top 20
+# 5. Add Power Automate POST
+# 6. Send Outlook digest
+
 import os
 import requests
 from datetime import datetime, timedelta
