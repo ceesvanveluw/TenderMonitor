@@ -19,16 +19,26 @@ r = requests.get(
 
 print("Status:", r.status_code)
 
-html = r.text
+soup = BeautifulSoup(r.text, "html.parser")
 
-keywords = [
-    "Closing date",
-    "Organization",
-    "/en/tender-opportunities/tender-notice",
-    "Tender notices",
-    "Results per page",
-    "Showing"
-]
+print("\nCANADABUYS LINKS\n")
+print("=" * 100)
 
-for keyword in keywords:
-    print(keyword, "=", html.count(keyword))
+count = 0
+
+for link in soup.find_all("a"):
+
+    href = str(link.get("href"))
+
+    if "/en/tender-opportunities/tender-notice" in href:
+
+        title = link.get_text(" ", strip=True)
+
+        print(title)
+        print(href)
+        print("-" * 100)
+
+        count += 1
+
+print()
+print("TOTAL LINKS FOUND:", count)
