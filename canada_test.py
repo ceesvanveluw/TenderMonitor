@@ -1,7 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 
-URL = "https://canadabuys.canada.ca/en/tender-opportunities?status%5B0%5D=1920&status%5B1%5D=87"
+BASE_URL = "https://canadabuys.canada.ca/en/tender-opportunities"
 
 headers = {
     "User-Agent": (
@@ -11,31 +11,39 @@ headers = {
     )
 }
 
+params = {
+    "status[0]": "1920",
+    "status[1]": "87",
+    "words": "marine"
+}
+
 r = requests.get(
-    URL,
+    BASE_URL,
+    params=params,
     headers=headers,
     timeout=30
 )
 
 print("Status:", r.status_code)
+print()
 
-soup = BeautifulSoup(r.text, "html.parser")
+html = r.text
 
-print("\nFORMS")
-print("=" * 100)
+print("marine count =", html.lower().count("marine"))
+print("vessel count =", html.lower().count("vessel"))
+print("ship count =", html.lower().count("ship"))
+print()
 
-for form in soup.find_all("form"):
+soup = BeautifulSoup(html, "html.parser")
 
-    print("ACTION:", form.get("action"))
-    print()
+for link in soup.find_all("a"):
 
-    for inp in form.find_all(["input", "select"]):
+    href = str(link.get("href"))
 
-        print(
-            "NAME:",
-            inp.get("name"),
-            "| ID:",
-            inp.get("id")
-        )
+    if "/en/tender-opportunities/tender-notice/" in href:
 
-    print("\n" + "=" * 100)
+        title = link.get_text(" ", strip=True)
+
+        if len(title) > 5:
+
+            print(title)
