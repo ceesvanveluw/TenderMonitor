@@ -40,4 +40,3 @@ print("=" * 80)
 
 for form in soup.find_all("form"):
     print("ACTION =", form.get("action"))
-``
