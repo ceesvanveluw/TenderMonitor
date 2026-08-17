@@ -4,6 +4,8 @@ from bs4 import BeautifulSoup
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+BASE_URL = "https://apps.pancanal.com"
+
 session = requests.Session()
 
 # Get search page and token
@@ -41,27 +43,34 @@ r2 = session.post(
 soup = BeautifulSoup(r2.text, "html.parser")
 
 print("\nPANAMA TENDERS\n")
-print("=" * 100)
+print("=" * 120)
 
 for well in soup.find_all("div", class_="well"):
 
     number = ""
+    title = ""
+    closing_date = ""
+    detail_url = ""
 
     link = well.find("a")
 
     if link:
         number = link.get_text(strip=True)
 
-    title_tag = well.find("p", class_="title")
+        href = link.get("href")
 
-    title = ""
+        if href:
+            if href.startswith("/"):
+                detail_url = BASE_URL + href
+            else:
+                detail_url = href
+
+    title_tag = well.find("p", class_="title")
 
     if title_tag:
         title = title_tag.get_text(" ", strip=True)
 
     dates = well.find_all("p", class_="date")
-
-    closing_date = ""
 
     if dates:
         closing_date = dates[0].get_text(" ", strip=True)
@@ -70,4 +79,5 @@ for well in soup.find_all("div", class_="well"):
         print(f"RFQ: {number}")
         print(f"TITLE: {title}")
         print(f"CLOSES: {closing_date}")
-        print("-" * 100)
+        print(f"URL: {detail_url}")
+        print("-" * 120)
