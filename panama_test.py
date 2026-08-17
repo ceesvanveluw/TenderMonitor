@@ -26,5 +26,6 @@ keywords = [
     "Ver detalle"
 ]
 
+
 for keyword in keywords:
     print(keyword, "=", html.count(keyword))
