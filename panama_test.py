@@ -4,39 +4,57 @@ from bs4 import BeautifulSoup
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+session = requests.Session()
+
+# STEP 1
 url = "https://apps.pancanal.com/sli/LicitacionesBusqueda/Welcome"
 
-r = requests.get(
+r = session.get(
     url,
-    timeout=30,
-    verify=False
+    verify=False,
+    timeout=30
 )
 
-print("Status:", r.status_code)
+print("GET Status:", r.status_code)
 
 soup = BeautifulSoup(r.text, "html.parser")
 
-print("\nINPUT FIELDS")
-print("=" * 80)
+token = soup.find(
+    "input",
+    {"name": "__RequestVerificationToken"}
+)
 
-for inp in soup.find_all("input"):
-    print(
-        "name=", inp.get("name"),
-        "| id=", inp.get("id"),
-        "| value=", inp.get("value")
-    )
+if token:
+    token = token.get("value")
+else:
+    token = ""
 
-print("\nSELECT FIELDS")
-print("=" * 80)
+print("Token found:", bool(token))
 
-for sel in soup.find_all("select"):
-    print(
-        "name=", sel.get("name"),
-        "| id=", sel.get("id")
-    )
+# STEP 2
+payload = {
+    "__RequestVerificationToken": token,
+    "CategoriaSeleccionadaID": "Ship & Marine Equipment",
+    "EstatusSeleccionadoID": "TODOS"
+}
 
-print("\nFORMS")
-print("=" * 80)
+post_url = "https://apps.pancanal.com/sli/LicitacionesBusqueda/LicitacionesBusquedaParametros"
 
-for form in soup.find_all("form"):
-    print("ACTION =", form.get("action"))
+r2 = session.post(
+    post_url,
+    data=payload,
+    verify=False,
+    timeout=30
+)
+
+print("POST Status:", r2.status_code)
+
+html = r2.text
+
+print("HTML Length:", len(html))
+print("RedirectLicitaciones =", html.count("RedirectLicitaciones"))
+print("Ver detalle =", html.count("Ver detalle"))
+print("NumeroLicitacion =", html.count("NumeroLicitacion"))
+
+print("\nFIRST 2000 CHARS\n")
+print(html[:2000])
