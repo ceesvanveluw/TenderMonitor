@@ -15,35 +15,47 @@ params = {
 response = requests.get(url, params=params)
 data = response.json()
 
+excluded_prefixes = [
+    "11", "21", "22",
+    "44", "45",
+    "51", "52", "53",
+    "61", "62",
+    "71", "72",
+    "81", "92"
+]
+
 positive = {
-    "crane": 20,
-    "lifting": 20,
-    "hoist": 20,
-    "winch": 20,
-    "marine": 15,
-    "vessel": 15,
-    "ship": 15,
-    "shipyard": 20,
-    "offshore": 20,
-    "port": 10,
-    "harbor": 10,
-    "harbour": 10,
-    "dock": 10,
-    "terminal": 5,
-    "dredg": 20,
-    "handling": 15,
+    "crane": 30,
+    "lifting": 25,
+    "lift": 20,
+    "hoist": 25,
+    "winch": 30,
+    "marine": 20,
+    "vessel": 20,
+    "ship": 20,
+    "shipyard": 30,
+    "offshore": 30,
+    "port": 15,
+    "harbor": 15,
+    "harbour": 15,
+    "dock": 15,
+    "terminal": 10,
+    "dredg": 30,
+    "handling": 20,
+    "cargo": 15,
+    "naval": 15
 }
 
 negative = {
-    "school": -30,
-    "conference": -30,
-    "training": -20,
-    "hotel": -20,
-    "septic": -50,
-    "waste": -40,
-    "vehicle": -20,
-    "medical": -30,
-    "hospital": -30
+    "conference": -50,
+    "training": -30,
+    "septic": -100,
+    "toilet": -100,
+    "waste": -100,
+    "medical": -50,
+    "hospital": -50,
+    "school": -50,
+    "vehicle": -40
 }
 
 results = []
@@ -51,9 +63,24 @@ results = []
 for opp in data["opportunitiesData"]:
 
     title = str(opp.get("title", ""))
-    score = 0
+    parent = str(opp.get("fullParentPathName", ""))
+    naics = str(opp.get("naicsCode", ""))
+    classification = str(opp.get("classificationCode", ""))
 
-    text = title.lower()
+    # NAICS reject filter
+    reject = False
+
+    for prefix in excluded_prefixes:
+        if naics.startswith(prefix):
+            reject = True
+            break
+
+    if reject:
+        continue
+
+    text = (title + " " + parent).lower()
+
+    score = 0
 
     for word, points in positive.items():
         if word in text:
@@ -64,13 +91,42 @@ for opp in data["opportunitiesData"]:
             score += points
 
     if score > 0:
-        results.append((score, title))
+        results.append({
+            "score": score,
+            "title": title,
+            "parent": parent,
+            "naics": naics,
+            "classification": classification
+        })
 
-results.sort(reverse=True)
+results = sorted(
+    results,
+    key=lambda x: x["score"],
+    reverse=True
+)
 
-print()
-print("TOP MATCHES")
-print("===========")
+print("")
+print("========================================================")
+print("SAM TENDER DIGEST")
+print("========================================================")
+print("")
 
-for score, title in results[:25]:
-    print(f"{score:3} | {title}")
+if len(results) == 0:
+    print("No matches found.")
+else:
+
+    for item in results[:10]:
+
+        print("--------------------------------------------------------")
+        print(f"SCORE : {item['score']}")
+        print("")
+        print("TITLE:")
+        print(item["title"])
+        print("")
+        print("AGENCY:")
+        print(item["parent"])
+        print("")
+        print(f"NAICS          : {item['naics']}")
+        print(f"CLASSIFICATION : {item['classification']}")
+        print("--------------------------------------------------------")
+        print("")
