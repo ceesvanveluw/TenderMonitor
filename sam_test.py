@@ -9,19 +9,27 @@ params = {
     "api_key": api_key,
     "limit": 10,
     "postedFrom": "08/01/2026",
-    "postedTo": "08/17/2026",
-    "q": "crane"
+    "postedTo": "08/17/2026"
 }
 
-print(params)
-
 response = requests.get(url, params=params)
-
-print("ACTUAL URL:")
-print(response.url)
 
 print("Status:", response.status_code)
 
 data = response.json()
 
-print("Total records:", data["totalRecords"])
+print()
+print("TOP LEVEL FIELDS")
+print("================")
+
+for key in data.keys():
+    print(key)
+
+print()
+print("FIRST OPPORTUNITY FIELDS")
+print("========================")
+
+first = data["opportunitiesData"][0]
+
+for key in first.keys():
+    print(key)
