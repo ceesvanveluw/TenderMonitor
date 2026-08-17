@@ -185,7 +185,6 @@ def get_description_after_label(lines):
         "summary",
         "details"
     ]
-    
 
     stop_labels = [
         "closing date",
@@ -236,3 +235,193 @@ def get_description_after_label(lines):
 
             if description:
                 return description[:1200]
+
+    return ""
+
+
+def get_detail_fields(url):
+    detail = {
+        "organization": "",
+        "closing_date": "",
+        "description": ""
+    }
+
+    try:
+        r = requests.get(
+            url,
+            headers=headers,
+            timeout=30
+        )
+
+        if r.status_code != 200:
+            detail["description"] = f"Could not load detail page. Status: {r.status_code}"
+            return detail
+
+        soup = BeautifulSoup(r.text, "html.parser")
+        lines = get_lines_from_soup(soup)
+
+        detail["organization"] = get_value_after_label(
+            lines,
+            [
+                "Organization",
+                "Organisation",
+                "Contracting organization",
+                "Contracting authority",
+                "Buyer",
+                "Procuring entity"
+            ]
+        )
+
+        detail["closing_date"] = get_value_after_label(
+            lines,
+            [
+                "Closing date",
+                "Closing date and time",
+                "Date de clôture",
+                "Date de fermeture",
+                "Closing"
+            ]
+        )
+
+        detail["description"] = get_description_after_label(lines)
+
+        if not detail["description"]:
+            meta = soup.find("meta", attrs={"name": "description"})
+            if meta and meta.get("content"):
+                detail["description"] = clean_text(meta.get("content"))[:1200]
+
+        return detail
+
+    except Exception as e:
+        detail["description"] = f"Error loading detail page: {e}"
+        return detail
+
+
+seen = {}
+total_links_seen = 0
+
+for word in SEARCH_WORDS:
+
+    params = {
+        "status[0]": "1920",
+        "status[1]": "87",
+        "words": word
+    }
+
+    r = requests.get(
+        SEARCH_URL,
+        params=params,
+        headers=headers,
+        timeout=30
+    )
+
+    print(f"Search word: {word} | Status: {r.status_code}")
+
+    if r.status_code != 200:
+        continue
+
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    for link in soup.find_all("a"):
+
+        href = str(link.get("href"))
+
+        if "/en/tender-opportunities/tender-notice/" not in href:
+            continue
+
+        title = link.get_text(" ", strip=True)
+
+        if len(title) < 8:
+            continue
+
+        if href.startswith("/"):
+            url = BASE_URL + href
+        else:
+            url = href
+
+        total_links_seen += 1
+
+        if url not in seen:
+            seen[url] = {
+                "title": title,
+                "url": url,
+                "matched_words": set()
+            }
+
+        seen[url]["matched_words"].add(word)
+
+
+results = []
+
+for url, item in seen.items():
+
+    title = item["title"]
+    text = title.lower()
+
+    score = 0
+
+    for word, points in positive.items():
+        if word in text:
+            score += points
+
+    for word, points in negative.items():
+        if word in text:
+            score += points
+
+    # Small bonus if the tender appeared in multiple keyword searches
+    score += len(item["matched_words"]) * 5
+
+    if score >= 40:
+
+        results.append({
+            "score": score,
+            "title": title,
+            "url": url,
+            "matched_words": sorted(item["matched_words"])
+        })
+
+
+results = sorted(
+    results,
+    key=lambda x: x["score"],
+    reverse=True
+)
+
+
+print()
+print("=" * 100)
+print("CANADABUYS KEYWORD SEARCH SUMMARY")
+print("=" * 100)
+print(f"Search words used       : {len(SEARCH_WORDS)}")
+print(f"Raw tender links seen   : {total_links_seen}")
+print(f"Unique tenders found    : {len(seen)}")
+print(f"Candidates >= 40 score  : {len(results)}")
+
+print()
+print("=" * 100)
+print("TOP CANADABUYS CANDIDATES")
+print("=" * 100)
+
+
+for item in results[:MAX_OUTPUT]:
+
+    detail = get_detail_fields(item["url"])
+
+    print()
+    print("SCORE:", item["score"])
+    print("TITLE:", item["title"])
+    print("ORGANIZATION:", detail["organization"])
+    print("CLOSING DATE:", detail["closing_date"])
+    print("MATCHED WORDS:", ", ".join(item["matched_words"]))
+    print("URL:", item["url"])
+
+    if detail["description"]:
+        print("DESCRIPTION:", detail["description"])
+    else:
+        print("DESCRIPTION: Not found on detail page with current parser.")
+
+    print("-" * 100)
+
+
+if not results:
+    print("No candidates found.")
