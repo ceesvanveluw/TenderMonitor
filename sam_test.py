@@ -7,7 +7,7 @@ url = "https://api.sam.gov/opportunities/v2/search"
 
 params = {
     "api_key": api_key,
-    "limit": 5,
+    "limit": 10,
     "postedFrom": "08/01/2026",
     "postedTo": "08/17/2026"
 }
@@ -18,5 +18,14 @@ print("Status:", response.status_code)
 
 data = response.json()
 
-print("Keys returned:")
-print(data.keys())
+print("Total records:", data["totalRecords"])
+print()
+
+for opp in data["opportunitiesData"][:10]:
+    print("------------------------------------")
+    
+    title = opp.get("title", "No title")
+    notice = opp.get("noticeId", "")
+    
+    print("Title:", title)
+    print("Notice:", notice)
