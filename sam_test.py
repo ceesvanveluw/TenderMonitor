@@ -1,5 +1,6 @@
 import os
 import requests
+import json
 
 api_key = os.environ["SAM_API_KEY"]
 
@@ -7,7 +8,7 @@ url = "https://api.sam.gov/opportunities/v2/search"
 
 params = {
     "api_key": api_key,
-    "limit": 10,
+    "limit": 1,
     "postedFrom": "08/01/2026",
     "postedTo": "08/17/2026"
 }
@@ -19,17 +20,8 @@ print("Status:", response.status_code)
 data = response.json()
 
 print()
-print("TOP LEVEL FIELDS")
-print("================")
-
-for key in data.keys():
-    print(key)
-
+print("FULL FIRST OPPORTUNITY")
+print("======================")
 print()
-print("FIRST OPPORTUNITY FIELDS")
-print("========================")
 
-first = data["opportunitiesData"][0]
-
-for key in first.keys():
-    print(key)
+print(json.dumps(data["opportunitiesData"][0], indent=2))
