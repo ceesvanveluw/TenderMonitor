@@ -7,6 +7,16 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    env:
+      SAM_API_KEY: ${{ secrets.SAM_API_KEY }}
+
     steps:
-      - name: Say hello
-        run: echo "Tender Monitor is alive!"
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install requests
+
+      - run: python sam_test.py
