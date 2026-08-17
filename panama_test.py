@@ -15,17 +15,17 @@ print("Status:", r.status_code)
 
 html = r.text
 
-print("\nSearching for keywords...\n")
+print("\nHTML LENGTH:", len(html))
+print("\nNumeroLicitacion count:", html.count("NumeroLicitacion"))
+print("RedirectLicitaciones count:", html.count("RedirectLicitaciones"))
 
-keywords = [
-    "WORK BOAT",
-    "LANCHA",
-    "Licitación",
-    "NumeroLicitacion",
-    "RedirectLicitaciones",
-    "Ver detalle"
-]
+idx = html.find("NumeroLicitacion")
 
+print("\nFIRST OCCURRENCE POSITION:", idx)
 
-for keyword in keywords:
-    print(keyword, "=", html.count(keyword))
+if idx >= 0:
+    print("\n================ CONTEXT ================\n")
+    start = max(0, idx - 1000)
+    end = min(len(html), idx + 3000)
+    print(html[start:end])
+    print("\n============= END CONTEXT =============\n")
