@@ -1,44 +1,43 @@
 import requests
 import urllib3
+from bs4 import BeautifulSoup
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-session = requests.Session()
-
-# Step 1 - get search page
 url = "https://apps.pancanal.com/sli/LicitacionesBusqueda/Welcome"
 
-r = session.get(
+r = requests.get(
     url,
     timeout=30,
     verify=False
 )
 
-print("GET Status:", r.status_code)
+print("Status:", r.status_code)
 
-# Step 2 - simulate Ship & Marine Equipment search
-search_url = "https://apps.pancanal.com/sli/LicitacionesBusqueda/LicitacionesBusquedaParametros"
+soup = BeautifulSoup(r.text, "html.parser")
 
-payload = {
-    "CategoriaSeleccionadaID": "Ship & Marine Equipment",
-    "EstatusSeleccionadoID": "TODOS"
-}
+print("\nINPUT FIELDS")
+print("=" * 80)
 
-r2 = session.post(
-    search_url,
-    data=payload,
-    timeout=30,
-    verify=False
-)
+for inp in soup.find_all("input"):
+    print(
+        "name=", inp.get("name"),
+        "| id=", inp.get("id"),
+        "| value=", inp.get("value")
+    )
 
-print("POST Status:", r2.status_code)
+print("\nSELECT FIELDS")
+print("=" * 80)
 
-html = r2.text
+for sel in soup.find_all("select"):
+    print(
+        "name=", sel.get("name"),
+        "| id=", sel.get("id")
+    )
 
-print("Length:", len(html))
-print("RedirectLicitaciones =", html.count("RedirectLicitaciones"))
-print("Ver detalle =", html.count("Ver detalle"))
-print("NumeroLicitacion =", html.count("NumeroLicitacion"))
+print("\nFORMS")
+print("=" * 80)
 
-print("\nFIRST 3000 CHARACTERS\n")
-print(html[:3000])
+for form in soup.find_all("form"):
+    print("ACTION =", form.get("action"))
+``
