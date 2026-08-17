@@ -7,9 +7,10 @@ url = "https://api.sam.gov/opportunities/v2/search"
 
 params = {
     "api_key": api_key,
-    "limit": 10,
+    "limit": 50,
     "postedFrom": "08/01/2026",
-    "postedTo": "08/17/2026"
+    "postedTo": "08/17/2026",
+    "q": "crane"
 }
 
 response = requests.get(url, params=params)
