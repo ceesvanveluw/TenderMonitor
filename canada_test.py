@@ -1,8 +1,11 @@
+import re
 import requests
 from bs4 import BeautifulSoup
 
 BASE_URL = "https://canadabuys.canada.ca"
 SEARCH_URL = "https://canadabuys.canada.ca/en/tender-opportunities"
+
+MAX_OUTPUT = 25
 
 headers = {
     "User-Agent": (
@@ -33,15 +36,21 @@ SEARCH_WORDS = [
     "tug",
     "drydock",
     "refit",
+
+    # French / bilingual CanadaBuys terms
     "maritime",
     "navire",
+    "bateau",
     "grue",
     "levage",
     "treuil",
     "hydraulique",
+    "portuaire",
     "dragage",
     "cale sèche",
+    "cale seche",
     "réparation navale",
+    "reparation navale",
     "remorqueur"
 ]
 
@@ -64,20 +73,25 @@ positive = {
     "levage": 25,
     "cargo": 20,
 
-    # Weakened broad marine words
+    # Broader marine words, deliberately lower score
     "marine": 15,
     "maritime": 15,
     "ship": 10,
     "vessel": 10,
     "navire": 10,
     "boat": 5,
+    "bateau": 5,
     "tug": 10,
+    "remorqueur": 10,
     "port": 5,
     "harbour": 5,
     "harbor": 5,
     "dock": 5,
     "portuaire": 5,
-    "remorqueur": 10
+    "cale sèche": 35,
+    "cale seche": 35,
+    "réparation navale": 30,
+    "reparation navale": 30
 }
 
 negative = {
@@ -97,13 +111,22 @@ negative = {
     "food": -40,
     "office": -30,
 
-    # Vehicle penalties
+    # Vehicle penalties. Do not search these actively.
     "truck": -15,
     "pickup": -20,
     "camion": -15,
     "camionnette": -15,
     "vehicule": -10,
     "véhicule": -10,
+
+    # Known false positives / weak hits
+    "isle-aux-grues": -40,
+    "l'isle-aux-grues": -40,
+    "scénique": -25,
+    "scenique": -25,
+    "sonorisation": -25,
+    "recyclables": -30,
+    "matières recyclables": -30,
 
     # French noise
     "santé": -40,
@@ -114,115 +137,101 @@ negative = {
     "nettoyage": -40
 }
 
-seen = {}
-total_links_seen = 0
 
-for word in SEARCH_WORDS:
+def clean_text(value):
+    if not value:
+        return ""
 
-    params = {
-        "status[0]": "1920",
-        "status[1]": "87",
-        "words": word
-    }
+    value = re.sub(r"\s+", " ", value)
+    return value.strip()
 
-    r = requests.get(
-        SEARCH_URL,
-        params=params,
-        headers=headers,
-        timeout=30
-    )
 
-    print(f"Search word: {word} | Status: {r.status_code}")
+def get_lines_from_soup(soup):
+    text = soup.get_text("\n", strip=True)
+    lines = []
 
-    if r.status_code != 200:
-        continue
+    for line in text.split("\n"):
+        line = clean_text(line)
+        if line:
+            lines.append(line)
 
-    soup = BeautifulSoup(r.text, "html.parser")
+    return lines
 
-    for link in soup.find_all("a"):
 
-        href = str(link.get("href"))
+def get_value_after_label(lines, labels):
+    labels_lower = [label.lower() for label in labels]
 
-        if "/en/tender-opportunities/tender-notice/" not in href:
-            continue
+    for i, line in enumerate(lines):
+        line_lower = line.lower()
 
-        title = link.get_text(" ", strip=True)
+        for label in labels_lower:
+            if line_lower == label:
+                if i + 1 < len(lines):
+                    return lines[i + 1]
 
-        if len(title) < 8:
-            continue
+            if line_lower.startswith(label + ":"):
+                return clean_text(line.split(":", 1)[1])
 
-        if href.startswith("/"):
-            url = BASE_URL + href
-        else:
-            url = href
+    return ""
 
-        total_links_seen += 1
 
-        if url not in seen:
-            seen[url] = {
-                "title": title,
-                "url": url,
-                "matched_words": set()
-            }
+def get_description_after_label(lines):
+    description_labels = [
+        "description",
+        "tender description",
+        "procurement description",
+        "notice description",
+        "description of work",
+        "summary",
+        "details"
+    ]
 
-        seen[url]["matched_words"].add(word)
+    stop_labels = [
+        "closing date",
+        "closing date and time",
+        "organization",
+        "contracting organization",
+        "contact information",
+        "contact",
+        "documents",
+        "attachments",
+        "notice type",
+        "category",
+        "region",
+        "location",
+        "publication date",
+        "amendment date",
+        "unspsc",
+        "gsin"
+    ]
 
-results = []
+    description_labels_lower = [x.lower() for x in description_labels]
+    stop_labels_lower = [x.lower() for x in stop_labels]
 
-for url, item in seen.items():
+    for i, line in enumerate(lines):
+        line_lower = line.lower()
 
-    title = item["title"]
-    text = title.lower()
+        if line_lower in description_labels_lower or any(line_lower.startswith(label + ":") for label in description_labels_lower):
 
-    score = 0
+            collected = []
 
-    for word, points in positive.items():
-        if word in text:
-            score += points
+            if ":" in line:
+                after_colon = clean_text(line.split(":", 1)[1])
+                if after_colon:
+                    collected.append(after_colon)
 
-    for word, points in negative.items():
-        if word in text:
-            score += points
+            for next_line in lines[i + 1:i + 15]:
+                next_lower = next_line.lower()
 
-    score += len(item["matched_words"]) * 5
+                if next_lower in stop_labels_lower:
+                    break
 
-    if score >= 40:
+                if any(next_lower.startswith(label + ":") for label in stop_labels_lower):
+                    break
 
-        results.append({
-            "score": score,
-            "title": title,
-            "url": url,
-            "matched_words": sorted(item["matched_words"])
-        })
+                collected.append(next_line)
 
-results = sorted(
-    results,
-    key=lambda x: x["score"],
-    reverse=True
-)
+            description = clean_text(" ".join(collected))
 
-print()
-print("=" * 100)
-print("CANADABUYS KEYWORD SEARCH SUMMARY")
-print("=" * 100)
-print(f"Search words used       : {len(SEARCH_WORDS)}")
-print(f"Raw tender links seen   : {total_links_seen}")
-print(f"Unique tenders found    : {len(seen)}")
-print(f"Candidates >= 40 score  : {len(results)}")
-
-print()
-print("=" * 100)
-print("TOP CANADABUYS CANDIDATES")
-print("=" * 100)
-
-for item in results[:30]:
-
-    print()
-    print("SCORE:", item["score"])
-    print("TITLE:", item["title"])
-    print("MATCHED WORDS:", ", ".join(item["matched_words"]))
-    print("URL:", item["url"])
-    print("-" * 100)
-
-if not results:
-    print("No candidates found.")
+            if description:
+                return description[:1200]
