@@ -10,17 +10,17 @@ from datetime import datetime, timedelta
 # =========================
 
 SAM_API_KEY = os.getenv("SAM_API_KEY", "").strip()
-
 BASE_URL = "https://api.sam.gov/opportunities/v2/search"
 
 DAYS_BACK = 7
 PAGE_SIZE = 1000
-TOP_PER_PAGE = 20
+TOP_PER_PAGE = PAGE_SIZE
 FINAL_TOP_N = 150
 
 RAW_OUTPUT_FILE = "sam_raw.jsonl"
 PAGE_SHORTLIST_FILE = "sam_page_shortlist.csv"
 FINAL_SHORTLIST_FILE = "sam_shortlist.csv"
+FINAL_JSON_FILE = "sam_shortlist.json"
 
 REQUEST_SLEEP_SECONDS = 0.5
 MAX_RETRIES = 3
@@ -33,8 +33,7 @@ MAX_RETRIES = 3
 # s = special notice
 # a = award notice
 #
-# For sales intelligence, I would exclude award notices for daily chasing,
-# but keep them if you want competitor / market intelligence.
+# For sales intelligence, award notices are excluded for daily chasing.
 PTYPE = "p,o,k,r,s"
 
 
@@ -60,7 +59,7 @@ HIGH_VALUE_TERMS = {
     "handling equipment": 35,
     "material handling": 25,
     "hoist": 25,
-    "davits": 25,
+    "davit": 25,
     "davits": 25,
 
     "offshore": 35,
@@ -114,6 +113,7 @@ MEDIUM_VALUE_TERMS = {
     "commissioning": 20,
     "upgrade": 25,
     "modernization": 25,
+    "modernisation": 25,
     "refurbishment": 22,
     "spare parts": 15,
     "spares": 12,
@@ -133,6 +133,7 @@ BAD_TERMS = {
     "guard service": -35,
     "it support": -25,
     "software license": -25,
+    "software licence": -25,
     "office supplies": -30,
     "furniture": -25,
     "medical": -30,
@@ -151,7 +152,7 @@ BAD_TERMS = {
     "camion": -25,
     "camionnette": -25,
     "vehicule": -25,
-    "véhicule": -25,
+    "vehicule": -25,
 }
 
 AGENCY_BOOST_TERMS = {
@@ -169,12 +170,11 @@ AGENCY_BOOST_TERMS = {
 }
 
 CLASSIFICATION_BOOSTS = {
-    # These are broad. Tune later when we see real results.
     "20": 10,  # Ship and marine equipment, if used
     "J": 8,    # Maintenance, repair, rebuilding
     "K": 10,   # Modification of equipment
-    "V": 8,    # Transportation/travel/relocation, can include marine
-    "Z": 5,    # Maintenance of real property, mostly noise but sometimes yards
+    "V": 8,    # Transportation / marine can sit here sometimes
+    "Z": 5,    # Maintenance of real property, noisy but sometimes yard related
 }
 
 
@@ -199,6 +199,7 @@ def build_search_blob(record):
         record.get("classificationCode"),
         record.get("archiveType"),
         record.get("setAside"),
+        record.get("description"),
     ]
 
     office = record.get("officeAddress") or {}
@@ -248,7 +249,6 @@ def score_record(record):
             score += points
             reasons.append(f"+{points} class:{prefix}")
 
-    # Small boost for active sales-stage notices
     notice_type = safe_text(record.get("type")).lower()
     base_type = safe_text(record.get("baseType")).lower()
     type_blob = notice_type + " " + base_type
@@ -318,8 +318,6 @@ def sam_get_page(posted_from, posted_to, offset):
 
 
 def extract_records(payload):
-    # SAM commonly returns records under opportunityData.
-    # Keep this flexible in case the response shape shifts.
     if not isinstance(payload, dict):
         return []
 
@@ -407,6 +405,11 @@ def write_csv(path, records):
             writer.writerow(row)
 
 
+def write_json(path, records):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(records, f, indent=2, ensure_ascii=False)
+
+
 def append_raw_jsonl(path, record):
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -433,6 +436,30 @@ def dedupe_records(records):
     return output
 
 
+def print_top_150(final_shortlist):
+    print("")
+    print("=" * 120)
+    print("TOP 150 SAM OPPORTUNITIES")
+    print("=" * 120)
+
+    for idx, rec in enumerate(final_shortlist[:150], start=1):
+        title = safe_text(rec.get("title"))[:160].replace("\n", " ").replace("\r", " ")
+        organisation = safe_text(rec.get("organisation"))[:120].replace("\n", " ").replace("\r", " ")
+        closing = safe_text(rec.get("closing_date"))
+        url = safe_text(rec.get("url"))
+        reasons = safe_text(rec.get("score_reasons"))[:180].replace("\n", " ").replace("\r", " ")
+
+        print(
+            f"{idx:03d} | "
+            f"Score={rec.get('raw_score', 0)} | "
+            f"Close={closing} | "
+            f"{title} | "
+            f"{organisation} | "
+            f"{url} | "
+            f"Reasons={reasons}"
+        )
+
+
 # =========================
 # MAIN
 # =========================
@@ -447,11 +474,11 @@ def run_sam_monitor():
     print(f"SAM pull window: {posted_from} to {posted_to}")
     print(f"Page size: {PAGE_SIZE}")
     print(f"Top per page: {TOP_PER_PAGE}")
+    print(f"Final top N: {FINAL_TOP_N}")
 
-    # Clear raw output at start of run
     open(RAW_OUTPUT_FILE, "w", encoding="utf-8").close()
 
-    all_page_winners = []
+    all_scored_records = []
 
     first_payload = sam_get_page(posted_from, posted_to, offset=0)
     total_records = get_total_records(first_payload)
@@ -464,7 +491,6 @@ def run_sam_monitor():
 
     for offset in range(total_pages):
         if offset == 0:
-            payload = first_payload
             records = first_records
         else:
             payload = sam_get_page(posted_from, posted_to, offset=offset)
@@ -484,27 +510,34 @@ def run_sam_monitor():
         scored_page.sort(key=lambda x: x.get("raw_score", 0), reverse=True)
 
         page_winners = scored_page[:TOP_PER_PAGE]
-        all_page_winners.extend(page_winners)
+        all_scored_records.extend(page_winners)
 
         best_score = page_winners[0]["raw_score"] if page_winners else "n/a"
         print(f"Page {offset}: kept {len(page_winners)} candidates. Best score: {best_score}")
 
         time.sleep(REQUEST_SLEEP_SECONDS)
 
-    all_page_winners = dedupe_records(all_page_winners)
-    all_page_winners.sort(key=lambda x: x.get("raw_score", 0), reverse=True)
+    all_scored_records = dedupe_records(all_scored_records)
+    all_scored_records.sort(key=lambda x: x.get("raw_score", 0), reverse=True)
 
-    final_shortlist = all_page_winners[:FINAL_TOP_N]
+    final_shortlist = all_scored_records[:FINAL_TOP_N]
 
-    write_csv(PAGE_SHORTLIST_FILE, all_page_winners)
+    write_csv(PAGE_SHORTLIST_FILE, all_scored_records)
     write_csv(FINAL_SHORTLIST_FILE, final_shortlist)
+    write_json(FINAL_JSON_FILE, final_shortlist)
+
+    print_top_150(final_shortlist)
 
     print("")
-    print("Done.")
-    print(f"Raw dump: {RAW_OUTPUT_FILE}")
-    print(f"Page shortlist: {PAGE_SHORTLIST_FILE}")
-    print(f"Final shortlist: {FINAL_SHORTLIST_FILE}")
+    print("=" * 120)
+    print("FILES CREATED")
+    print("=" * 120)
+    print(f"Raw dump        : {RAW_OUTPUT_FILE}")
+    print(f"Page shortlist  : {PAGE_SHORTLIST_FILE}")
+    print(f"Final shortlist : {FINAL_SHORTLIST_FILE}")
+    print(f"JSON shortlist  : {FINAL_JSON_FILE}")
     print(f"Final candidates: {len(final_shortlist)}")
+    print("Done.")
 
 
 if __name__ == "__main__":
