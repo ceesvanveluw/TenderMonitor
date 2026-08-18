@@ -1,248 +1,511 @@
-# NEXT STEPS
-#
-# 1. Verify limit=1000 works
-# 2. Verify date filtering works
-# 3. Verify top 20 quality
-# 4. Add description retrieval for top 20
-# 5. Add Power Automate POST
-# 6. Send Outlook digest
-
 import os
+import csv
+import json
+import time
 import requests
 from datetime import datetime, timedelta
 
-api_key = os.environ["SAM_API_KEY"]
+# =========================
+# CONFIG
+# =========================
 
-# Last 7 days
-today = datetime.utcnow()
-week_ago = today - timedelta(days=7)
+SAM_API_KEY = os.getenv("SAM_API_KEY", "").strip()
 
-posted_from = week_ago.strftime("%m/%d/%Y")
-posted_to = today.strftime("%m/%d/%Y")
+BASE_URL = "https://api.sam.gov/opportunities/v2/search"
 
-url = "https://api.sam.gov/opportunities/v2/search"
+DAYS_BACK = 7
+PAGE_SIZE = 1000
+TOP_PER_PAGE = 20
+FINAL_TOP_N = 150
 
-params = {
-    "api_key": api_key,
-    "limit": 1000,
-    "offset": 0,
-    "postedFrom": posted_from,
-    "postedTo": posted_to
-}
+RAW_OUTPUT_FILE = "sam_raw.jsonl"
+PAGE_SHORTLIST_FILE = "sam_page_shortlist.csv"
+FINAL_SHORTLIST_FILE = "sam_shortlist.csv"
 
-print("========================================================")
-print("SAM TENDER DIGEST")
-print("========================================================")
-print(f"Period: {posted_from} - {posted_to}")
-print()
+REQUEST_SLEEP_SECONDS = 0.5
+MAX_RETRIES = 3
 
-response = requests.get(url, params=params)
+# Procurement types:
+# p = presolicitation
+# o = solicitation
+# k = combined synopsis/solicitation
+# r = sources sought
+# s = special notice
+# a = award notice
+#
+# For sales intelligence, I would exclude award notices for daily chasing,
+# but keep them if you want competitor / market intelligence.
+PTYPE = "p,o,k,r,s"
 
-# Quota handling
-if response.status_code == 429:
-    print("SAM API QUOTA EXCEEDED")
-    print("------------------------------------")
-    print(response.text)
-    exit(0)
 
-# Generic API error
-if response.status_code != 200:
-    print(f"API ERROR: {response.status_code}")
-    print(response.text)
-    exit(0)
+# =========================
+# SCORING
+# =========================
 
-data = response.json()
+HIGH_VALUE_TERMS = {
+    "crane": 40,
+    "cranes": 40,
+    "pedestal crane": 55,
+    "offshore crane": 60,
+    "ship crane": 45,
+    "marine crane": 50,
+    "knuckle boom": 55,
+    "active heave": 70,
+    "ahc": 60,
 
-if "opportunitiesData" not in data:
-    print("No opportunitiesData returned.")
-    print(data)
-    exit(0)
+    "winch": 35,
+    "winches": 35,
+    "deck equipment": 45,
+    "lifting equipment": 45,
+    "handling equipment": 35,
+    "material handling": 25,
+    "hoist": 25,
+    "davits": 25,
+    "davits": 25,
 
-print(f"Total records found : {data.get('totalRecords', '?')}")
-print(f"Records retrieved   : {len(data['opportunitiesData'])}")
-print(f"Limit returned      : {data.get('limit', '?')}")
-print(f"Offset returned     : {data.get('offset', '?')}")
-print()
-
-# Reject obvious rubbish sectors
-excluded_prefixes = [
-    "11",   # Agriculture
-    "21",   # Mining
-    "22",   # Utilities
-    "44", "45",
-    "51",
-    "52",
-    "53",
-    "61",
-    "62",
-    "71",
-    "72",
-    "81",
-    "92"
-]
-
-positive = {
-    "crane": 60,
-    "lifting": 50,
-    "lift": 30,
-    "hoist": 50,
-    "winch": 60,
-    "offshore": 70,
-    "dredg": 80,
-    "marine construction": 80,
-    "ship": 20,
+    "offshore": 35,
     "vessel": 30,
-    "shipyard": 10,
-    "marine": 10,
-    "naval": 10,
-    "port": 25,
-    "harbor": 25,
-    "harbour": 25,
-    "terminal": 20,
-    "dock": 20,
-    "quay": 30,
-    "cargo": 25,
-    "handling": 30,
-    "jackup": 80,
-    "heavy lift": 80,
-    "pipeline": 40,
-    "barge": 40,
-    "mooring": 40,
-    "anchor": 40
+    "ship": 20,
+    "shipyard": 30,
+    "dry dock": 25,
+    "drydock": 25,
+    "floating dock": 25,
+    "marine": 20,
+
+    "subsea": 45,
+    "rov": 35,
+    "plsv": 55,
+    "rsv": 50,
+    "ahts": 45,
+    "psv": 35,
+    "osv": 35,
+    "drillship": 55,
+    "semi-submersible": 55,
+    "semisubmersible": 55,
+    "rig": 35,
+    "drilling rig": 50,
+    "bop": 45,
+
+    "fpso": 55,
+    "fso": 35,
+    "turret": 45,
+    "mooring": 35,
+    "topside": 35,
+    "topsides": 35,
+
+    "fabrication": 20,
+    "structural steel": 20,
+    "hydraulic": 25,
+    "hydraulics": 25,
+    "electrical drive": 25,
+    "automation": 15,
+    "control system": 20,
 }
 
-negative = {
-    "conference": -100,
-    "training": -50,
-    "septic": -150,
-    "toilet": -150,
-    "waste": -100,
-    "medical": -100,
-    "hospital": -100,
-    "school": -100,
-    "vehicle": -40,
-    "fabric": -120,
-    "cloth": -120,
-    "uniform": -120,
-    "apparel": -120,
-    "hose": -80,
-    "gasket": -80,
-    "seal": -80,
-    "bearing": -60,
-    "filter": -80,
-    "audio": -150,
-    "video": -150,
-    "camera": -100,
-    "software": -100,
-    "license": -100,
-    "food": -150,
-    "catering": -150,
-    "water cooler": -150,
-    "bottled water": -150,
-    "chemical": -100,
-    "cyanide": -150,
-    "furniture": -150,
-    "chair": -150,
-    "desk": -150,
-    "cleaning": -150,
-    "janitorial": -150,
-    "housekeeping": -150
+MEDIUM_VALUE_TERMS = {
+    "maintenance": 12,
+    "repair": 12,
+    "overhaul": 18,
+    "inspection": 8,
+    "certification": 8,
+    "load test": 25,
+    "load testing": 25,
+    "installation": 12,
+    "commissioning": 20,
+    "upgrade": 25,
+    "modernization": 25,
+    "refurbishment": 22,
+    "spare parts": 15,
+    "spares": 12,
+    "parts": 5,
 }
 
-results = []
+BAD_TERMS = {
+    "janitorial": -40,
+    "cleaning": -35,
+    "custodial": -35,
+    "lawn": -35,
+    "landscaping": -35,
+    "catering": -35,
+    "food": -25,
+    "restaurant": -25,
+    "security guard": -35,
+    "guard service": -35,
+    "it support": -25,
+    "software license": -25,
+    "office supplies": -30,
+    "furniture": -25,
+    "medical": -30,
+    "pharmaceutical": -35,
+    "training course": -20,
+    "consulting services": -15,
+    "architect engineer": -15,
+    "ae services": -15,
+    "road": -25,
+    "highway": -25,
+    "bridge": -20,
+    "vehicle": -25,
+    "vehicles": -25,
+    "truck": -25,
+    "trucks": -25,
+    "camion": -25,
+    "camionnette": -25,
+    "vehicule": -25,
+    "véhicule": -25,
+}
 
-for opp in data["opportunitiesData"]:
+AGENCY_BOOST_TERMS = {
+    "navy": 20,
+    "naval": 20,
+    "military sealift": 25,
+    "coast guard": 20,
+    "maritime administration": 20,
+    "army corps": 10,
+    "noaa": 10,
+    "bureau of ocean energy": 15,
+    "boem": 15,
+    "bureau of safety": 15,
+    "bsee": 15,
+}
 
-    title = str(opp.get("title", ""))
-    agency = str(opp.get("fullParentPathName", ""))
-    naics = str(opp.get("naicsCode", ""))
-    classification = str(opp.get("classificationCode", ""))
-    notice_id = str(opp.get("noticeId", ""))
+CLASSIFICATION_BOOSTS = {
+    # These are broad. Tune later when we see real results.
+    "20": 10,  # Ship and marine equipment, if used
+    "J": 8,    # Maintenance, repair, rebuilding
+    "K": 10,   # Modification of equipment
+    "V": 8,    # Transportation/travel/relocation, can include marine
+    "Z": 5,    # Maintenance of real property, mostly noise but sometimes yards
+}
 
-    reject = False
 
-    for prefix in excluded_prefixes:
-        if naics.startswith(prefix):
-            reject = True
-            break
+def safe_text(value):
+    if value is None:
+        return ""
+    if isinstance(value, (list, dict)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
 
-    if reject:
-        continue
 
-    text = (title + " " + agency).lower()
-    title_text = title.lower()
+def build_search_blob(record):
+    fields = [
+        record.get("title"),
+        record.get("solicitationNumber"),
+        record.get("fullParentPathName"),
+        record.get("organizationName"),
+        record.get("organizationType"),
+        record.get("type"),
+        record.get("baseType"),
+        record.get("naicsCode"),
+        record.get("classificationCode"),
+        record.get("archiveType"),
+        record.get("setAside"),
+    ]
+
+    office = record.get("officeAddress") or {}
+    if isinstance(office, dict):
+        fields.extend([
+            office.get("city"),
+            office.get("state"),
+            office.get("zip"),
+        ])
+
+    pop = record.get("placeOfPerformance") or {}
+    if isinstance(pop, dict):
+        fields.append(safe_text(pop))
+
+    return " | ".join(safe_text(x) for x in fields).lower()
+
+
+def score_record(record):
+    blob = build_search_blob(record)
 
     score = 0
+    reasons = []
 
-    # Title matches count double
-    for word, points in positive.items():
-        if word in title_text:
-            score += points * 2
-
-    # General matches
-    for word, points in positive.items():
-        if word in text:
+    for term, points in HIGH_VALUE_TERMS.items():
+        if term in blob:
             score += points
+            reasons.append(f"+{points} {term}")
 
-    # Negative matches
-    for word, points in negative.items():
-        if word in text:
+    for term, points in MEDIUM_VALUE_TERMS.items():
+        if term in blob:
             score += points
+            reasons.append(f"+{points} {term}")
 
-    agency_lower = agency.lower()
+    for term, points in BAD_TERMS.items():
+        if term in blob:
+            score += points
+            reasons.append(f"{points} {term}")
 
-    if "army corps of engineers" in agency_lower:
-        score += 50
+    for term, points in AGENCY_BOOST_TERMS.items():
+        if term in blob:
+            score += points
+            reasons.append(f"+{points} agency:{term}")
 
-    if "coast guard" in agency_lower:
-        score += 30
+    classification = safe_text(record.get("classificationCode")).upper().strip()
+    for prefix, points in CLASSIFICATION_BOOSTS.items():
+        if classification.startswith(prefix):
+            score += points
+            reasons.append(f"+{points} class:{prefix}")
 
-    if "maritime administration" in agency_lower:
-        score += 50
+    # Small boost for active sales-stage notices
+    notice_type = safe_text(record.get("type")).lower()
+    base_type = safe_text(record.get("baseType")).lower()
+    type_blob = notice_type + " " + base_type
 
-    if "port authority" in agency_lower:
-        score += 40
+    if "solicitation" in type_blob:
+        score += 15
+        reasons.append("+15 solicitation")
 
-    if "navsea" in agency_lower:
-        score += 20
+    if "sources sought" in type_blob:
+        score += 10
+        reasons.append("+10 sources sought")
 
-    if score > 0:
-        results.append({
-            "score": score,
-            "title": title,
-            "agency": agency,
-            "naics": naics,
-            "classification": classification,
-            "notice_id": notice_id
-        })
+    if "presolicitation" in type_blob or "pre solicitation" in type_blob:
+        score += 10
+        reasons.append("+10 presolicitation")
 
-results = sorted(
-    results,
-    key=lambda x: x["score"],
-    reverse=True
-)
+    if "award" in type_blob:
+        score -= 15
+        reasons.append("-15 award notice")
 
-print()
-print("========================================================")
-print("TOP 20 CANDIDATES")
-print("========================================================")
-print()
+    return score, reasons
 
-for item in results[:20]:
 
-    print("--------------------------------------------------------")
-    print(f"SCORE : {item['score']}")
-    print()
-    print("TITLE")
-    print(item['title'])
-    print()
-    print("AGENCY")
-    print(item['agency'])
-    print()
-    print(f"NAICS          : {item['naics']}")
-    print(f"CLASSIFICATION : {item['classification']}")
-    print(f"NOTICE ID      : {item['notice_id']}")
-    print("--------------------------------------------------------")
-    print()
+# =========================
+# SAM FETCHING
+# =========================
 
-print(f"Candidates returned: {len(results)}")
+def format_sam_date(dt):
+    return dt.strftime("%m/%d/%Y")
+
+
+def sam_get_page(posted_from, posted_to, offset):
+    if not SAM_API_KEY:
+        raise RuntimeError("SAM_API_KEY environment variable is missing.")
+
+    params = {
+        "api_key": SAM_API_KEY,
+        "postedFrom": posted_from,
+        "postedTo": posted_to,
+        "limit": PAGE_SIZE,
+        "offset": offset,
+        "ptype": PTYPE,
+    }
+
+    last_error = None
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            response = requests.get(BASE_URL, params=params, timeout=60)
+
+            if response.status_code == 429:
+                sleep_for = 10 * attempt
+                print(f"Rate limited. Sleeping {sleep_for} seconds.")
+                time.sleep(sleep_for)
+                continue
+
+            response.raise_for_status()
+            return response.json()
+
+        except Exception as exc:
+            last_error = exc
+            sleep_for = 5 * attempt
+            print(f"Error on offset {offset}, attempt {attempt}: {exc}")
+            time.sleep(sleep_for)
+
+    raise RuntimeError(f"Failed to fetch offset {offset}: {last_error}")
+
+
+def extract_records(payload):
+    # SAM commonly returns records under opportunityData.
+    # Keep this flexible in case the response shape shifts.
+    if not isinstance(payload, dict):
+        return []
+
+    for key in ["opportunitiesData", "opportunityData", "data", "results"]:
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+
+    return []
+
+
+def get_total_records(payload):
+    value = payload.get("totalRecords", 0)
+    try:
+        return int(value)
+    except Exception:
+        return 0
+
+
+def normalise_sam_record(record, score, reasons):
+    notice_id = safe_text(record.get("noticeId") or record.get("noticeID") or record.get("id"))
+    solnum = safe_text(record.get("solicitationNumber"))
+    title = safe_text(record.get("title"))
+
+    org = (
+        record.get("fullParentPathName")
+        or record.get("organizationName")
+        or record.get("department")
+        or record.get("subtier")
+        or ""
+    )
+
+    url = record.get("uiLink") or ""
+    description_link = record.get("description") or ""
+
+    if not url and notice_id:
+        url = f"https://sam.gov/opp/{notice_id}/view"
+
+    return {
+        "source": "SAM",
+        "source_id": notice_id or solnum or title,
+        "title": title,
+        "organisation": safe_text(org),
+        "posted_date": safe_text(record.get("postedDate")),
+        "closing_date": safe_text(record.get("responseDeadLine") or record.get("reponseDeadLine")),
+        "notice_type": safe_text(record.get("type") or record.get("baseType")),
+        "classification_code": safe_text(record.get("classificationCode")),
+        "naics_code": safe_text(record.get("naicsCode")),
+        "description": safe_text(description_link),
+        "url": safe_text(url),
+        "raw_score": score,
+        "score_reasons": "; ".join(reasons[:25]),
+        "raw_record": record,
+    }
+
+
+# =========================
+# OUTPUT
+# =========================
+
+CSV_FIELDS = [
+    "source",
+    "source_id",
+    "title",
+    "organisation",
+    "posted_date",
+    "closing_date",
+    "notice_type",
+    "classification_code",
+    "naics_code",
+    "description",
+    "url",
+    "raw_score",
+    "score_reasons",
+]
+
+
+def write_csv(path, records):
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+        writer.writeheader()
+
+        for rec in records:
+            row = {field: rec.get(field, "") for field in CSV_FIELDS}
+            writer.writerow(row)
+
+
+def append_raw_jsonl(path, record):
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def dedupe_records(records):
+    seen = set()
+    output = []
+
+    for rec in records:
+        key = (
+            rec.get("source"),
+            rec.get("source_id"),
+            rec.get("title"),
+            rec.get("organisation"),
+        )
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        output.append(rec)
+
+    return output
+
+
+# =========================
+# MAIN
+# =========================
+
+def run_sam_monitor():
+    today = datetime.utcnow().date()
+    start = today - timedelta(days=DAYS_BACK)
+
+    posted_from = format_sam_date(datetime.combine(start, datetime.min.time()))
+    posted_to = format_sam_date(datetime.combine(today, datetime.min.time()))
+
+    print(f"SAM pull window: {posted_from} to {posted_to}")
+    print(f"Page size: {PAGE_SIZE}")
+    print(f"Top per page: {TOP_PER_PAGE}")
+
+    # Clear raw output at start of run
+    open(RAW_OUTPUT_FILE, "w", encoding="utf-8").close()
+
+    all_page_winners = []
+
+    first_payload = sam_get_page(posted_from, posted_to, offset=0)
+    total_records = get_total_records(first_payload)
+    first_records = extract_records(first_payload)
+
+    total_pages = (total_records + PAGE_SIZE - 1) // PAGE_SIZE
+
+    print(f"Total records reported by SAM: {total_records}")
+    print(f"Total pages to fetch: {total_pages}")
+
+    for offset in range(total_pages):
+        if offset == 0:
+            payload = first_payload
+            records = first_records
+        else:
+            payload = sam_get_page(posted_from, posted_to, offset=offset)
+            records = extract_records(payload)
+
+        print(f"Fetched page offset {offset}: {len(records)} records")
+
+        scored_page = []
+
+        for raw in records:
+            append_raw_jsonl(RAW_OUTPUT_FILE, raw)
+
+            score, reasons = score_record(raw)
+            normalised = normalise_sam_record(raw, score, reasons)
+            scored_page.append(normalised)
+
+        scored_page.sort(key=lambda x: x.get("raw_score", 0), reverse=True)
+
+        page_winners = scored_page[:TOP_PER_PAGE]
+        all_page_winners.extend(page_winners)
+
+        best_score = page_winners[0]["raw_score"] if page_winners else "n/a"
+        print(f"Page {offset}: kept {len(page_winners)} candidates. Best score: {best_score}")
+
+        time.sleep(REQUEST_SLEEP_SECONDS)
+
+    all_page_winners = dedupe_records(all_page_winners)
+    all_page_winners.sort(key=lambda x: x.get("raw_score", 0), reverse=True)
+
+    final_shortlist = all_page_winners[:FINAL_TOP_N]
+
+    write_csv(PAGE_SHORTLIST_FILE, all_page_winners)
+    write_csv(FINAL_SHORTLIST_FILE, final_shortlist)
+
+    print("")
+    print("Done.")
+    print(f"Raw dump: {RAW_OUTPUT_FILE}")
+    print(f"Page shortlist: {PAGE_SHORTLIST_FILE}")
+    print(f"Final shortlist: {FINAL_SHORTLIST_FILE}")
+    print(f"Final candidates: {len(final_shortlist)}")
+
+
+if __name__ == "__main__":
+    run_sam_monitor()
