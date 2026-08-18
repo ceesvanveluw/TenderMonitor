@@ -33,7 +33,7 @@ MAX_RETRIES = 6
 # s = special notice
 # a = award notice
 #
-# For sales intelligence, award notices are excluded for daily chasing.
+# For daily sales chasing we exclude award notices.
 PTYPE = "p,o,k,r,s"
 
 
@@ -152,7 +152,7 @@ BAD_TERMS = {
     "camion": -25,
     "camionnette": -25,
     "vehicule": -25,
-    "vehicule": -25,
+    "véhicule": -25,
 }
 
 AGENCY_BOOST_TERMS = {
@@ -297,26 +297,29 @@ def sam_get_page(posted_from, posted_to, offset):
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            response = requests.get(BASE_URL, params=params, timeout=60)
+            response = requests.get(
+                BASE_URL,
+                params=params,
+                timeout=60
+            )
 
-if response.status_code == 429:
-    sleep_for = 30 * attempt
+            if response.status_code == 429:
+                sleep_for = 30 * attempt
 
-    print(
-        f"Rate limited (429). "
-        f"Attempt {attempt}/{MAX_RETRIES}. "
-        f"Sleeping {sleep_for} seconds."
-    )
+                print(
+                    f"Rate limited (429). "
+                    f"Attempt {attempt}/{MAX_RETRIES}. "
+                    f"Sleeping {sleep_for} seconds."
+                )
 
-    time.sleep(sleep_for)
+                last_error = "HTTP 429 Too Many Requests"
+                time.sleep(sleep_for)
+                continue
 
-    last_error = "HTTP 429 Too Many Requests"
-    continue
-
-print(
-    f"HTTP {response.status_code} "
-    f"Offset={offset}"
-)
+            print(
+                f"HTTP {response.status_code} "
+                f"Offset={offset}"
+            )
 
             response.raise_for_status()
             return response.json()
@@ -324,10 +327,17 @@ print(
         except Exception as exc:
             last_error = exc
             sleep_for = 5 * attempt
-            print(f"Error on offset {offset}, attempt {attempt}: {exc}")
+
+            print(
+                f"Error on offset {offset}, "
+                f"attempt {attempt}: {exc}"
+            )
+
             time.sleep(sleep_for)
 
-    raise RuntimeError(f"Failed to fetch offset {offset}: {last_error}")
+    raise RuntimeError(
+        f"Failed to fetch offset {offset}: {last_error}"
+    )
 
 
 def extract_records(payload):
