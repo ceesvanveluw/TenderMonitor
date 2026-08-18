@@ -313,6 +313,11 @@ if response.status_code == 429:
     last_error = "HTTP 429 Too Many Requests"
     continue
 
+print(
+    f"HTTP {response.status_code} "
+    f"Offset={offset}"
+)
+
             response.raise_for_status()
             return response.json()
 
