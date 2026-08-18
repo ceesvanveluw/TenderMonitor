@@ -23,7 +23,7 @@ FINAL_SHORTLIST_FILE = "sam_shortlist.csv"
 FINAL_JSON_FILE = "sam_shortlist.json"
 
 REQUEST_SLEEP_SECONDS = 0.5
-MAX_RETRIES = 3
+MAX_RETRIES = 6
 
 # Procurement types:
 # p = presolicitation
