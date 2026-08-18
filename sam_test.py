@@ -299,11 +299,19 @@ def sam_get_page(posted_from, posted_to, offset):
         try:
             response = requests.get(BASE_URL, params=params, timeout=60)
 
-            if response.status_code == 429:
-                sleep_for = 10 * attempt
-                print(f"Rate limited. Sleeping {sleep_for} seconds.")
-                time.sleep(sleep_for)
-                continue
+if response.status_code == 429:
+    sleep_for = 30 * attempt
+
+    print(
+        f"Rate limited (429). "
+        f"Attempt {attempt}/{MAX_RETRIES}. "
+        f"Sleeping {sleep_for} seconds."
+    )
+
+    time.sleep(sleep_for)
+
+    last_error = "HTTP 429 Too Many Requests"
+    continue
 
             response.raise_for_status()
             return response.json()
