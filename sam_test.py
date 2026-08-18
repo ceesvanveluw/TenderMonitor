@@ -69,50 +69,84 @@ excluded_prefixes = [
     "11",   # Agriculture
     "21",   # Mining
     "22",   # Utilities
-    "44", "45",  # Retail
-    "51",   # Media
-    "52",   # Finance
-    "53",   # Real Estate
-    "61",   # Education
-    "62",   # Healthcare
-    "71",   # Recreation
-    "72",   # Hotels/Food
-    "81",   # Personal Services
-    "92"    # Public Administration
+    "44", "45",
+    "51",
+    "52",
+    "53",
+    "61",
+    "62",
+    "71",
+    "72",
+    "81",
+    "92"
 ]
 
 positive = {
-    "crane": 30,
-    "lifting": 25,
-    "lift": 20,
-    "hoist": 25,
-    "winch": 30,
-    "marine": 20,
-    "vessel": 20,
+    "crane": 60,
+    "lifting": 50,
+    "lift": 30,
+    "hoist": 50,
+    "winch": 60,
+    "offshore": 70,
+    "dredg": 80,
+    "marine construction": 80,
     "ship": 20,
-    "shipyard": 30,
-    "offshore": 30,
-    "port": 15,
-    "harbor": 15,
-    "harbour": 15,
-    "dock": 15,
-    "terminal": 10,
-    "dredg": 30,
-    "handling": 20,
-    "cargo": 15,
-    "naval": 15
+    "vessel": 30,
+    "shipyard": 10,
+    "marine": 10,
+    "naval": 10,
+    "port": 25,
+    "harbor": 25,
+    "harbour": 25,
+    "terminal": 20,
+    "dock": 20,
+    "quay": 30,
+    "cargo": 25,
+    "handling": 30,
+    "jackup": 80,
+    "heavy lift": 80,
+    "pipeline": 40,
+    "barge": 40,
+    "mooring": 40,
+    "anchor": 40
 }
 
 negative = {
-    "conference": -50,
-    "training": -30,
-    "septic": -100,
-    "toilet": -100,
+    "conference": -100,
+    "training": -50,
+    "septic": -150,
+    "toilet": -150,
     "waste": -100,
-    "medical": -50,
-    "hospital": -50,
-    "school": -50,
-    "vehicle": -40
+    "medical": -100,
+    "hospital": -100,
+    "school": -100,
+    "vehicle": -40,
+    "fabric": -120,
+    "cloth": -120,
+    "uniform": -120,
+    "apparel": -120,
+    "hose": -80,
+    "gasket": -80,
+    "seal": -80,
+    "bearing": -60,
+    "filter": -80,
+    "audio": -150,
+    "video": -150,
+    "camera": -100,
+    "software": -100,
+    "license": -100,
+    "food": -150,
+    "catering": -150,
+    "water cooler": -150,
+    "bottled water": -150,
+    "chemical": -100,
+    "cyanide": -150,
+    "furniture": -150,
+    "chair": -150,
+    "desk": -150,
+    "cleaning": -150,
+    "janitorial": -150,
+    "housekeeping": -150
 }
 
 results = []
@@ -136,16 +170,41 @@ for opp in data["opportunitiesData"]:
         continue
 
     text = (title + " " + agency).lower()
+    title_text = title.lower()
 
     score = 0
 
+    # Title matches count double
+    for word, points in positive.items():
+        if word in title_text:
+            score += points * 2
+
+    # General matches
     for word, points in positive.items():
         if word in text:
             score += points
 
+    # Negative matches
     for word, points in negative.items():
         if word in text:
             score += points
+
+    agency_lower = agency.lower()
+
+    if "army corps of engineers" in agency_lower:
+        score += 50
+
+    if "coast guard" in agency_lower:
+        score += 30
+
+    if "maritime administration" in agency_lower:
+        score += 50
+
+    if "port authority" in agency_lower:
+        score += 40
+
+    if "navsea" in agency_lower:
+        score += 20
 
     if score > 0:
         results.append({
